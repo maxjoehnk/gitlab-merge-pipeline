@@ -11,6 +11,7 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GitlabConfig {
     pub url: Url,
+    pub token: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
