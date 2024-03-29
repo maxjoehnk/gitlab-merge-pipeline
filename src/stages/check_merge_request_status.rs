@@ -5,22 +5,22 @@ pub async fn check_merge_request_status(
     entry: &mut QueueEntry,
     merge_request: &MergeRequestDetails,
 ) -> color_eyre::Result<()> {
-    if !entry.state.is_running() {
+    if !entry.is_running() {
         return Ok(());
     }
     if merge_request.has_conflicts {
         tracing::warn!("Aborting merge request {}: has conflicts", entry.title);
-        entry.state = QueueState::Conflicts;
+        entry.change_state(QueueState::Conflicts);
     }
 
     if merge_request.state == MergeRequestStatus::Merged {
         tracing::info!("Merge request {} merged", entry.title);
-        entry.state = QueueState::Merged;
+        entry.change_state(QueueState::Merged);
     }
 
     if merge_request.state == MergeRequestStatus::Closed {
         tracing::info!("Merge request {} was closed", entry.title);
-        entry.state = QueueState::Closed;
+        entry.change_state(QueueState::Closed);
     }
 
     Ok(())

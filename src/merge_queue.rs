@@ -1,5 +1,9 @@
 use std::collections::VecDeque;
+
+use chrono::{DateTime, Utc};
 use yansi::Paint;
+
+use crate::api::MergeRequest;
 
 #[derive(Default, Debug)]
 pub struct MergeQueue {
@@ -18,18 +22,44 @@ pub enum QueueState {
     Closed,
 }
 
-impl QueueState {
-    pub fn is_running(&self) -> bool {
-        matches!(self, QueueState::Running)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct QueueEntry {
     pub title: String,
     pub project_id: u64,
     pub merge_request_id: u64,
-    pub state: QueueState,
+    state: QueueState,
+    last_state_change: DateTime<Utc>,
+}
+
+impl QueueEntry {
+    pub fn is_running(&self) -> bool {
+        matches!(self.state, QueueState::Running)
+    }
+
+    pub fn is_pending(&self) -> bool {
+        matches!(self.state, QueueState::Pending)
+    }
+
+    pub fn change_state(&mut self, state: QueueState) {
+        self.state = state;
+        self.last_state_change = Utc::now();
+    }
+    
+    fn should_update(&self, merge_request: &MergeRequest) -> bool {
+        self.last_state_change < merge_request.updated_at
+    }
+}
+
+impl From<MergeRequest> for QueueEntry {
+    fn from(merge_request: MergeRequest) -> Self {
+        Self {
+            title: merge_request.title,
+            merge_request_id: merge_request.iid,
+            project_id: merge_request.project_id,
+            state: QueueState::default(),
+            last_state_change: Utc::now(),
+        }
+    }
 }
 
 impl MergeQueue {
@@ -66,5 +96,21 @@ impl MergeQueue {
         }
 
         Ok(())
+    }
+
+    pub fn try_add_merge_request(&mut self, merge_request: MergeRequest) {
+        if self.merge_requests
+            .iter()
+            .any(|mr| mr.merge_request_id == merge_request.iid && !mr.should_update(&merge_request))
+        {
+            return;
+        }
+        if let Some(index) = self.merge_requests
+            .iter()
+            .position(|mr| mr.merge_request_id == merge_request.iid)
+        {
+            self.merge_requests.remove(index);
+        }
+        self.merge_requests.push_back(QueueEntry::from(merge_request));
     }
 }

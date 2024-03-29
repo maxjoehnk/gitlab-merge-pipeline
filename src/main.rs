@@ -19,38 +19,38 @@ async fn main() -> color_eyre::Result<()> {
 
     let config = config::Config::read().await?;
 
-    let gitlab_client = build_client(&config).await?;
+    let api_client = ApiClient::new(&config).await?;
 
     for repository in config.repositories {
         // TODO: spawn task per repository
         let mut queue = MergeQueue::default();
 
         loop {
-            fetch_merge_requests(&gitlab_client, &repository, &mut queue).await?;
+            fetch_merge_requests(&api_client, &repository, &mut queue).await?;
             if !queue
                 .merge_requests
                 .iter()
-                .any(|mr| mr.state == QueueState::Running)
+                .any(|mr| mr.is_running())
             {
                 if let Some(next_task) = queue
                     .merge_requests
                     .iter_mut()
-                    .filter(|mr| mr.state == QueueState::Pending)
+                    .filter(|mr| mr.is_pending())
                     .next()
                 {
                     tracing::info!("Starting merge request {}", next_task.title);
-                    next_task.state = QueueState::Running;
+                    next_task.change_state(QueueState::Running);
                 }
             }
             if let Some(mr) = queue
                 .merge_requests
                 .iter_mut()
-                .find(|mr| mr.state == QueueState::Running)
+                .find(|mr| mr.is_running())
             {
-                let details = get_mr_details(&gitlab_client, mr).await?;
-                start_merge_progress(&gitlab_client, mr, &details).await?;
+                let details = api_client.get_details(mr).await?;
+                start_merge_progress(&api_client, mr, &details).await?;
                 check_merge_request_status(mr, &details).await?;
-                check_pipeline_status(&gitlab_client, mr, &details).await?;
+                check_pipeline_status(&api_client, mr, &details).await?;
             }
 
             // TODO: print aggregated queue of all repositories
@@ -59,7 +59,7 @@ async fn main() -> color_eyre::Result<()> {
             if queue
                 .merge_requests
                 .iter()
-                .any(|mr| mr.state != QueueState::Running)
+                .any(|mr| !mr.is_running())
             {
                 continue;
             }
