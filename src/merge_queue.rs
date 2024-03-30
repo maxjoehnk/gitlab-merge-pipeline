@@ -5,7 +5,7 @@ use yansi::Paint;
 
 use crate::api::MergeRequest;
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct MergeQueue {
     pub merge_requests: VecDeque<QueueEntry>,
 }
@@ -64,7 +64,6 @@ impl From<MergeRequest> for QueueEntry {
 
 impl MergeQueue {
     pub fn print(&self) -> color_eyre::Result<()> {
-        print!("{}", termion::clear::All);
         let (columns, _) = termion::terminal_size()?;
         for entry in self.merge_requests.iter() {
             let state = match entry.state {

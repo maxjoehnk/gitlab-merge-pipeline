@@ -5,7 +5,7 @@ use gitlab::api::common::SortOrder;
 use gitlab::api::projects::merge_requests::{MergeRequestOrderBy, MergeRequestState};
 use serde::Deserialize;
 
-use crate::config::{Config, Repository};
+use crate::config::{GitlabConfig, Repository};
 use crate::merge_queue::QueueEntry;
 
 pub struct ApiClient {
@@ -13,12 +13,12 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub async fn new(config: &Config) -> color_eyre::Result<Self> {
+    pub async fn new(config: &GitlabConfig) -> color_eyre::Result<Self> {
         let gitlab_client = build_client(config).await?;
-        
+
         Ok(Self { gitlab_client })
     }
-    
+
     pub async fn get_details(&self, entry: &QueueEntry) -> color_eyre::Result<MergeRequestDetails> {
         let merge_request = gitlab::api::projects::merge_requests::MergeRequest::builder()
             .project(entry.project_id)
@@ -29,7 +29,7 @@ impl ApiClient {
 
         Ok(merge_request)
     }
-    
+
     pub async fn fetch_merge_requests(&self, repository: &Repository) -> color_eyre::Result<Vec<MergeRequest>> {
         let merge_requests = gitlab::api::projects::merge_requests::MergeRequests::builder()
             .project(&repository.name)
@@ -41,10 +41,10 @@ impl ApiClient {
             .build()?;
         let merge_requests = gitlab::api::paged(merge_requests, gitlab::api::Pagination::All);
         let merge_requests: Vec<MergeRequest> = merge_requests.query_async(&self.gitlab_client).await?;
-        
+
         Ok(merge_requests)
     }
-    
+
     pub async fn get_jobs(&self, entry: &QueueEntry, pipeline_id: u64) -> color_eyre::Result<Vec<Job>> {
         let jobs = gitlab::api::projects::pipelines::PipelineJobs::builder()
             .project(entry.project_id)
@@ -53,10 +53,10 @@ impl ApiClient {
         let jobs = gitlab::api::paged(jobs, gitlab::api::Pagination::All);
         let jobs: Vec<Job> = jobs.query_async(&self.gitlab_client).await?;
         tracing::trace!("{:#?}", &jobs);
-        
+
         Ok(jobs)
     }
-    
+
     pub async fn run_job(&self, entry: &QueueEntry, job: &Job) -> color_eyre::Result<()> {
         let req = gitlab::api::projects::jobs::PlayJob::builder()
             .project(entry.project_id)
@@ -64,7 +64,7 @@ impl ApiClient {
             .build()?;
         let req = gitlab::api::ignore(req);
         req.query_async(&self.gitlab_client).await?;
-        
+
         Ok(())
     }
 
@@ -92,14 +92,14 @@ impl ApiClient {
     }
 }
 
-async fn build_client(config: &Config) -> color_eyre::Result<AsyncGitlab> {
+async fn build_client(config: &GitlabConfig) -> color_eyre::Result<AsyncGitlab> {
     let gitlab_client = GitlabBuilder::new(
-        config.gitlab.url.host().unwrap().to_string(),
-        &config.gitlab.token,
+        config.url.host().unwrap().to_string(),
+        &config.token,
     )
     .build_async()
     .await?;
-    
+
     Ok(gitlab_client)
 }
 
