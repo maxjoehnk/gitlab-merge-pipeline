@@ -1,12 +1,15 @@
+use std::time::Duration;
+
 use chrono::{DateTime, Utc};
-use gitlab::api::AsyncQuery;
 use gitlab::{AsyncGitlab, GitlabBuilder};
+use gitlab::api::AsyncQuery;
 use gitlab::api::common::SortOrder;
 use gitlab::api::projects::merge_requests::{MergeRequestOrderBy, MergeRequestState};
 use serde::Deserialize;
+use try_again::{Delay, Retry, retry_async, TokioSleep};
 
 use crate::config::{GitlabConfig, Repository};
-use crate::merge_queue::QueueEntry;
+use crate::merge_queue::{QueueEntry};
 
 pub struct ApiClient {
     gitlab_client: AsyncGitlab,
@@ -23,6 +26,7 @@ impl ApiClient {
         let merge_request = gitlab::api::projects::merge_requests::MergeRequest::builder()
             .project(entry.project_id)
             .merge_request(entry.merge_request_id)
+            .include_rebase_in_progress(true)
             .build()?;
         let merge_request: MergeRequestDetails = merge_request.query_async(&self.gitlab_client).await?;
         tracing::debug!("{:#?}", merge_request);
@@ -63,7 +67,8 @@ impl ApiClient {
             .job(job.id)
             .build()?;
         let req = gitlab::api::ignore(req);
-        req.query_async(&self.gitlab_client).await?;
+        
+        self.execute(req).await?;
 
         Ok(())
     }
@@ -75,7 +80,8 @@ impl ApiClient {
             .merge_when_pipeline_succeeds(true)
             .build()?;
         let enable_auto_merge = gitlab::api::ignore(enable_auto_merge);
-        enable_auto_merge.query_async(&self.gitlab_client).await?;
+        
+        self.execute(enable_auto_merge).await?;
 
         Ok(())
     }
@@ -86,8 +92,25 @@ impl ApiClient {
             .merge_request(entry.merge_request_id)
             .build()?;
         let rebase = gitlab::api::ignore(rebase);
-        rebase.query_async(&self.gitlab_client).await?;
 
+        self.execute(rebase).await?;
+
+        Ok(())
+    }
+    
+    async fn execute(&self, query: impl AsyncQuery<(), AsyncGitlab>) -> color_eyre::Result<()> {
+        retry_async(
+            Retry {
+                max_tries: 3,
+                delay: Some(Delay::ExponentialBackoff {
+                    initial_delay: Duration::from_secs(1),
+                    max_delay: Some(Duration::from_secs(10)),
+                }),
+            },
+            TokioSleep {},
+            || query.query_async(&self.gitlab_client),
+        ).await?;
+        
         Ok(())
     }
 }
@@ -97,8 +120,8 @@ async fn build_client(config: &GitlabConfig) -> color_eyre::Result<AsyncGitlab> 
         config.url.host().unwrap().to_string(),
         &config.token,
     )
-    .build_async()
-    .await?;
+        .build_async()
+        .await?;
 
     Ok(gitlab_client)
 }
@@ -110,6 +133,13 @@ pub struct MergeRequestDetails {
     pub detailed_merge_status: DetailedMergeStatus,
     pub head_pipeline: MergeRequestPipeline,
     pub merge_when_pipeline_succeeds: bool,
+    pub rebase_in_progress: bool,
+}
+
+impl MergeRequestDetails {
+    pub fn needs_rebase(&self) -> bool {
+        self.detailed_merge_status == DetailedMergeStatus::NeedRebase
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

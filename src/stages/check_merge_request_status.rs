@@ -1,3 +1,4 @@
+use std::time::Duration;
 use crate::api::*;
 use crate::merge_queue::{QueueEntry, QueueState};
 
@@ -16,6 +17,8 @@ pub async fn check_merge_request_status(
     if merge_request.state == MergeRequestStatus::Merged {
         tracing::info!("Merge request {} merged", entry.title);
         entry.change_state(QueueState::Merged);
+        // Wait until gitlab has processed the changes in main
+        tokio::time::sleep(Duration::from_secs(60)).await;
     }
 
     if merge_request.state == MergeRequestStatus::Closed {

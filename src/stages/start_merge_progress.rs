@@ -1,18 +1,33 @@
 use crate::api::*;
 use crate::merge_queue::{QueueEntry, QueueState};
 
-pub async fn start_merge_progress(
+pub async fn rebase_when_necessary(
     api_client: &ApiClient,
     entry: &mut QueueEntry,
     merge_request: &MergeRequestDetails,
-) -> color_eyre::Result<()> {
+) -> color_eyre::Result<bool> {
+    if merge_request.rebase_in_progress {
+        return Ok(true);
+    }
     if merge_request.needs_rebase() {
         tracing::info!("Rebasing merge request {}", entry.title);
         if let Err(e) = api_client.rebase(entry).await {
             entry.change_state(QueueState::RebaseFailed);
             tracing::error!("Failed to rebase merge request {}: {}", entry.title, e);
-            return Ok(());
         }
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+pub async fn ensure_automerge(
+    api_client: &ApiClient,
+    entry: &mut QueueEntry,
+    merge_request: &MergeRequestDetails,
+) -> color_eyre::Result<()> {
+    if !entry.is_running() {
+        return Ok(());
     }
 
     if !merge_request.merge_when_pipeline_succeeds {
@@ -26,11 +41,4 @@ pub async fn start_merge_progress(
     }
 
     Ok(())
-}
-
-
-impl MergeRequestDetails {
-    fn needs_rebase(&self) -> bool {
-        self.detailed_merge_status == DetailedMergeStatus::NeedRebase
-    }
 }

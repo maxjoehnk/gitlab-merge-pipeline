@@ -37,6 +37,12 @@ async fn main() -> color_eyre::Result<()> {
 
             loop {
                 fetch_merge_requests(&api_client, &repository, &mut queue).await?;
+                if !queue.merge_requests.iter()
+                    .any(|mr| mr.is_pending()) {
+                    queue.merge_requests.iter_mut().filter(|mr| mr.pipeline_failed()).for_each(|mr| {
+                        mr.reset_state();
+                    });
+                }
                 if !queue
                     .merge_requests
                     .iter()
@@ -57,20 +63,17 @@ async fn main() -> color_eyre::Result<()> {
                     .find(|mr| mr.is_running())
                 {
                     let details = api_client.get_details(mr).await?;
-                    start_merge_progress(&api_client, mr, &details).await?;
                     check_merge_request_status(mr, &details).await?;
-                    check_pipeline_status(&api_client, mr, &details).await?;
+                    if !rebase_when_necessary(&api_client, mr, &details).await? {
+                        // Only check pipeline status if we didn't rebase
+                        check_pipeline_status(mr, &details).await?;
+                        check_failed_jobs(&api_client, mr, &details).await?;
+                        start_manual_jobs(&api_client, mr, &details).await?;
+                        ensure_automerge(&api_client, mr, &details).await?;
+                    }
                 }
 
                 queue_sender.send((repository.name.clone(), queue.clone()))?;
-
-                if queue
-                    .merge_requests
-                    .iter()
-                    .any(|mr| !mr.is_running())
-                {
-                    continue;
-                }
 
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }

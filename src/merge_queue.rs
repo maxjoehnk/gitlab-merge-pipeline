@@ -22,6 +22,12 @@ pub enum QueueState {
     Closed,
 }
 
+impl QueueState {
+    fn is_error(&self) -> bool {
+        matches!(self, Self::RebaseFailed | Self::PipelineFailed | Self::Conflicts)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct QueueEntry {
     pub title: String,
@@ -40,13 +46,21 @@ impl QueueEntry {
         matches!(self.state, QueueState::Pending)
     }
 
+    pub fn pipeline_failed(&self) -> bool {
+        matches!(self.state, QueueState::PipelineFailed)
+    }
+
     pub fn change_state(&mut self, state: QueueState) {
         self.state = state;
         self.last_state_change = Utc::now();
     }
     
+    pub(crate) fn reset_state(&mut self) {
+        self.state = QueueState::Pending;
+    }
+
     fn should_update(&self, merge_request: &MergeRequest) -> bool {
-        self.last_state_change < merge_request.updated_at
+        self.state.is_error() && self.last_state_change < merge_request.updated_at
     }
 }
 
