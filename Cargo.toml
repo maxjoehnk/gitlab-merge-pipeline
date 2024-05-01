@@ -14,7 +14,7 @@ tracing-appender = "0.2"
 rolling-file = "0.2"
 clap = "4.5"
 serde = "1"
-toml = "0.8"
+toml = "0.8.12"
 directories = "5"
 url = { version = "2.5.0", features = ["serde"] }
 yansi = "1"
