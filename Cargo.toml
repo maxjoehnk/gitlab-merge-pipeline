@@ -18,7 +18,7 @@ toml = "0.8"
 directories = "5"
 url = { version = "2.5.0", features = ["serde"] }
 yansi = "1"
-serde_json = "1"
+serde_json = "1.0.116"
 termion = "3"
 chrono = "0.4"
 try-again = "0.1"
