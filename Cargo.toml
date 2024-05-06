@@ -19,6 +19,6 @@ directories = "5"
 url = { version = "2.5.0", features = ["serde"] }
 yansi = "1"
 serde_json = "1"
-termion = "3"
+termion = "4"
 chrono = "0.4"
 try-again = "0.1"
